@@ -558,8 +558,14 @@ async function encryptSecret() {
             log('AAD text:', currentAadText);
             log('AAD (base64url):', aadBase64url);
 
-            // Call the WebAssembly function
-            const encryptionResult = goWasm.encryptSecret(window.currentData.key, paddedSecretBase64);
+            // Get the AAD value
+            const aadBase64 = aadBase64url.replace(/-/g, '+').replace(/_/g, '/');
+            // Add padding if needed
+            const paddedAadBase64 = aadBase64.padEnd(Math.ceil(aadBase64.length / 4) * 4, '=');
+            log('AAD (standard base64):', paddedAadBase64);
+
+            // Call the WebAssembly function with the AAD as the third argument
+            const encryptionResult = goWasm.encryptSecret(window.currentData.key, paddedSecretBase64, paddedAadBase64);
             console.log('Raw encryption result:', encryptionResult);
 
             // Check if the result is valid
@@ -729,55 +735,71 @@ async function decryptSecret() {
         log('Padded nonce:', paddedNonce);
         log('Padded AAD:', paddedAAD);
 
-        const decryptedSecret = goWasm.decryptSecret(
-            window.currentData.key,
-            paddedCiphertext,
-            paddedNonce,
-            paddedAAD
-        );
-        log('Decryption result:');
-        log('- Decrypted secret (base64):', decryptedSecret);
-        log('- Original secret (base64):', window.currentData.secret);
+        try {
+            const decryptedSecret = goWasm.decryptSecret(
+                window.currentData.key,
+                paddedCiphertext,
+                paddedNonce,
+                paddedAAD
+            );
 
-        // Convert the decrypted secret from base64 to text
-        const decryptedSecretB64Url = decryptedSecret.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-        const decryptedText = base64ToText(decryptedSecretB64Url);
-
-        // Update the secret input field with the decrypted text
-        secretInput.value = decryptedText;
-        window.currentData.secret = decryptedSecretB64Url;
-        window.currentData.secretText = decryptedText;
-
-        log('Decrypted secret (text):', decryptedText);
-
-        // Verify the decryption
-        log('Decrypted secret (base64url):', decryptedSecretB64Url);
-
-        // If we're decrypting a loaded secret, we don't have the original to compare
-        if (window.currentData.secret === 'placeholder-will-be-decrypted') {
-            log('Decryption successful! This was a loaded secret, so we have no original to compare.');
-            // Update the secret with the decrypted value
-            window.currentData.secret = decryptedSecretB64Url;
-        } else if (decryptedSecretB64Url === window.currentData.secret) {
-            log('Decryption successful! The decrypted secret matches the original secret.');
-        } else {
-            log('Warning: The decrypted secret does not match the original secret.');
-            log('This could be due to differences in base64 encoding formats.');
-
-            // Try comparing the decoded values
-            try {
-                const originalBytes = atob(window.currentData.secret.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(window.currentData.secret.length / 4) * 4, '='));
-                const decryptedBytes = atob(decryptedSecret.padEnd(Math.ceil(decryptedSecret.length / 4) * 4, '='));
-
-                if (originalBytes === decryptedBytes) {
-                    log('However, the decoded binary values match! The decryption is actually successful.');
-                } else {
-                    log('The decoded binary values also do not match. There might be an actual decryption issue.');
-                }
-            } catch (e) {
-                log('Error comparing decoded values:', e.message);
+            // Check if decryption was successful
+            if (!decryptedSecret) {
+                throw new Error('Decryption failed - authentication tag mismatch');
             }
+
+            log('Decryption result:');
+            log('- Decrypted secret (base64):', decryptedSecret);
+            log('- Original secret (base64):', window.currentData.secret);
+
+            // Convert the decrypted secret from base64 to text
+            const decryptedSecretB64Url = decryptedSecret.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            const decryptedText = base64ToText(decryptedSecretB64Url);
+
+            // Update the secret input field with the decrypted text
+            secretInput.value = decryptedText;
+            window.currentData.secret = decryptedSecretB64Url;
+            window.currentData.secretText = decryptedText;
+
+            log('Decrypted secret (text):', decryptedText);
+
+            // Verify the decryption
+            log('Decrypted secret (base64url):', decryptedSecretB64Url);
+
+            // If we're decrypting a loaded secret, we don't have the original to compare
+            if (window.currentData.secret === 'placeholder-will-be-decrypted') {
+                log('Decryption successful! This was a loaded secret, so we have no original to compare.');
+                // Update the secret with the decrypted value
+                window.currentData.secret = decryptedSecretB64Url;
+            } else if (decryptedSecretB64Url === window.currentData.secret) {
+                log('Decryption successful! The decrypted secret matches the original secret.');
+            } else {
+                log('Warning: The decrypted secret does not match the original secret.');
+                log('This could be due to differences in base64 encoding formats.');
+
+                // Try comparing the decoded values
+                try {
+                    const originalBytes = atob(window.currentData.secret.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(window.currentData.secret.length / 4) * 4, '='));
+                    const decryptedBytes = atob(decryptedSecret.padEnd(Math.ceil(decryptedSecret.length / 4) * 4, '='));
+
+                    if (originalBytes === decryptedBytes) {
+                        log('However, the decoded binary values match! The decryption is actually successful.');
+                    } else {
+                        log('The decoded binary values also do not match. There might be an actual decryption issue.');
+                    }
+                } catch (e) {
+                    log('Error comparing decoded values:', e.message);
+                }
+            }
+        } catch (error) {
+            log('Decryption failed:', error.message);
+            log('This is expected if you changed the AAD value after encryption.');
+            log('For AES-GCM, the AAD is part of the authentication tag calculation.');
+            log('If the AAD changes, the authentication will fail even if the key and nonce are correct.');
+            throw error; // Re-throw to be caught by the outer try-catch
         }
+
+        // All decryption logic is now handled inside the try-catch block
 
         log('');
         log('Security and Cryptographic Properties:');

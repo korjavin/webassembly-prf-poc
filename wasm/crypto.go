@@ -76,6 +76,24 @@ func encryptSecret(this js.Value, args []js.Value) interface{} {
 		return js.Error{Value: js.ValueOf("Missing arguments: key, secret")}
 	}
 
+	// Check if AAD is provided as third argument
+	var aadBytes []byte
+	if len(args) >= 3 && args[2].String() != "" {
+		// Use provided AAD
+		aadBase64 := args[2].String()
+		js.Global().Get("console").Call("log", "Using provided AAD:", aadBase64)
+		var err error
+		aadBytes, err = safeDecodeBase64(aadBase64)
+		if err != nil {
+			js.Global().Get("console").Call("log", "AAD decode error:", err.Error())
+			return js.Error{Value: js.ValueOf("Invalid AAD: " + err.Error())}
+		}
+	} else {
+		// Use default AAD
+		aadBytes = []byte("WebAuthnPRFDemo!")
+		js.Global().Get("console").Call("log", "Using default AAD: WebAuthnPRFDemo!")
+	}
+
 	// Decode key from base64
 	keyBase64 := args[0].String()
 	js.Global().Get("console").Call("log", "Key base64 length:", len(keyBase64))
@@ -116,16 +134,13 @@ func encryptSecret(this js.Value, args []js.Value) interface{} {
 		return js.Error{Value: js.ValueOf("Nonce generation failed: " + err.Error())}
 	}
 
-	// Fixed AAD (16 bytes)
-	aad := []byte("WebAuthnPRFDemo!")
-
 	// Encrypt
-	ciphertext := aesGCM.Seal(nil, nonce, secret, aad)
+	ciphertext := aesGCM.Seal(nil, nonce, secret, aadBytes)
 
 	// Convert to base64 strings
 	ciphertextBase64 := base64.StdEncoding.EncodeToString(ciphertext)
 	nonceBase64 := base64.StdEncoding.EncodeToString(nonce)
-	aadBase64 := base64.StdEncoding.EncodeToString(aad)
+	aadBase64 := base64.StdEncoding.EncodeToString(aadBytes)
 
 	// Log the result for debugging
 	js.Global().Get("console").Call("log", "Encryption result from Go:")
@@ -214,7 +229,10 @@ func decryptSecret(this js.Value, args []js.Value) interface{} {
 	plaintext, err := aesGCM.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
 		js.Global().Get("console").Call("log", "Decryption error:", err.Error())
-		return js.Error{Value: js.ValueOf("Decryption failed: " + err.Error())}
+		// Create a proper JavaScript Error object
+		errorConstructor := js.Global().Get("Error")
+		errorObject := errorConstructor.New("Decryption failed: " + err.Error())
+		return errorObject
 	}
 
 	// Return base64 encoded plaintext
