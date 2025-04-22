@@ -47,6 +47,17 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         console.log(...args);
     };
+
+    // Initialize WebAssembly
+    log('Initializing WebAssembly...');
+    const go = new Go();
+    WebAssembly.instantiateStreaming(fetch('main.wasm'), go.importObject).then((result) => {
+        go.run(result.instance);
+        log('WebAssembly initialized successfully');
+    }).catch(err => {
+        log('Failed to initialize WebAssembly:', err);
+        console.error('WebAssembly initialization error:', err);
+    });
 });
 
 // Add a new secret
@@ -54,28 +65,30 @@ async function addSecret() {
     try {
         log('Generating a new secret...');
 
-        // Call the API to add a new secret
-        const response = await fetch('/api/secret/add', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
+        // Generate random secretID (16 bytes) using WebAssembly
+        const secretID = goWasm.generateRandomBytes(16);
+        log('Generated secretID:', secretID);
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Failed to add secret: ${errorText}`);
-        }
+        // Generate random salt (32 bytes) using WebAssembly
+        const salt = goWasm.generateRandomBytes(32);
+        log('Generated salt:', salt);
 
-        // Parse the response
-        const secret = await response.json();
-        window.currentSecret = secret;
+        // Generate random secret (32 bytes) using WebAssembly
+        const secret = goWasm.generateRandomBytes(32);
+        log('Generated secret:', secret);
 
-        // Log the secret details
+        // Store the secret locally
+        window.currentSecret = {
+            secretID,
+            salt,
+            secret
+        };
+
         log('Secret generated successfully:');
-        log('Secret ID:', secret.secretID);
-        log('Salt:', secret.salt);
-        log('These values are stored on the server and will be used for PRF evaluation.');
+        log('Secret ID:', secretID);
+        log('Salt:', salt);
+        log('Secret:', secret);
+        log('These values are generated in the browser using WebAssembly.');
 
         // Enable the getPrfBtn
         document.getElementById('getPrfBtn').disabled = false;
@@ -96,127 +109,62 @@ async function getPrf() {
 
         log('Getting PRF output for secret ID:', window.currentSecret.secretID);
 
-        // Step 1: Get assertion options with PRF extension
-        log('Step 1: Requesting assertion options with PRF extension...');
-        const optionsResponse = await fetch('/api/prf/assertionOptions', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                secretID: window.currentSecret.secretID
-            })
-        });
+        // Step 1: Create WebAuthn options with PRF extension
+        log('Step 1: Creating WebAuthn options with PRF extension...');
 
-        if (!optionsResponse.ok) {
-            const errorText = await optionsResponse.text();
-            throw new Error(`Failed to get assertion options: ${errorText}`);
-        }
+        // Create a random challenge
+        const challenge = new Uint8Array(32);
+        window.crypto.getRandomValues(challenge);
 
-        // Parse the options
-        const options = await optionsResponse.json();
-        log('Received assertion options:');
-        log(JSON.stringify(options, null, 2));
+        // Create WebAuthn options
+        const options = {
+            publicKey: {
+                challenge: challenge,
+                rpId: window.location.hostname,
+                userVerification: 'preferred',
+                extensions: {
+                    prf: {
+                        eval: {
+                            first: b64uToBuf(window.currentSecret.salt)
+                        }
+                    }
+                }
+            }
+        };
 
-        // Step 2: Convert base64url strings to ArrayBuffers where needed
-        log('Step 2: Converting options for WebAuthn API...');
-
-        if (options.publicKey.challenge) {
-            options.publicKey.challenge = b64uToBuf(options.publicKey.challenge);
-        }
-
-        if (options.publicKey.allowCredentials) {
-            options.publicKey.allowCredentials = options.publicKey.allowCredentials.map(cred => {
-                return {
-                    ...cred,
-                    id: b64uToBuf(cred.id)
-                };
-            });
-        }
-
-        // Convert PRF extension values to ArrayBuffers
-        if (options.publicKey.extensions && options.publicKey.extensions.prf && options.publicKey.extensions.prf.eval && options.publicKey.extensions.prf.eval.first) {
-            options.publicKey.extensions.prf.eval.first = b64uToBuf(options.publicKey.extensions.prf.eval.first);
-        }
-
-        log('Options prepared for WebAuthn API');
-
-        // Step 3: Call navigator.credentials.get()
-        log('Step 3: Calling navigator.credentials.get() with PRF extension...');
-        log('This will prompt the authenticator to evaluate the PRF with the provided salt.');
-
-        log('Sending the following request to the authenticator:');
+        log('Created WebAuthn options:');
         log(JSON.stringify({
             publicKey: {
                 ...options.publicKey,
                 challenge: 'ArrayBuffer (base64): ' + bufToB64u(options.publicKey.challenge),
-                allowCredentials: options.publicKey.allowCredentials.map(cred => ({
-                    ...cred,
-                    id: 'ArrayBuffer (base64): ' + bufToB64u(cred.id)
-                })),
                 extensions: options.publicKey.extensions ? {
                     prf: options.publicKey.extensions.prf ? {
                         eval: options.publicKey.extensions.prf.eval ? {
-                            first: 'ArrayBuffer (base64): ' + bufToB64u(options.publicKey.extensions.prf.eval.first)
+                            first: 'ArrayBuffer (base64): ' + window.currentSecret.salt
                         } : undefined
                     } : undefined
                 } : undefined
             }
         }, null, 2));
-        log('This request tells the authenticator to:');
-        log('1. Find the credential matching one of the allowCredentials IDs');
-        log('2. Use the user\'s presence (e.g., touching the authenticator) to authorize the operation');
-        log('3. Sign the challenge with the private key');
-        log('4. If the PRF extension is supported, evaluate the PRF with the provided salt');
 
-        const credential = await navigator.credentials.get({
-            publicKey: options.publicKey
-        });
+        // Step 2: Call navigator.credentials.get()
+        log('Step 2: Calling navigator.credentials.get() with PRF extension...');
+        log('This will prompt the authenticator to evaluate the PRF with the provided salt.');
+
+        const credential = await navigator.credentials.get(options);
 
         log('Authenticator response received!');
         log('Response type: ' + credential.type);
         log('Credential ID: ' + credential.id);
         log('Raw ID (base64): ' + bufToB64u(credential.rawId));
 
-        // Step 4: Extract PRF result
-        log('Step 4: Extracting PRF result from authenticator response...');
-
-        // Detailed explanation of the authenticator response
-        log('The authenticator response contains:');
-        log('1. authenticatorData: An ArrayBuffer containing:');
-        log('   - rpIdHash: SHA-256 hash of the Relying Party ID');
-        log('   - flags: Bit flags indicating user presence, user verification, etc.');
-        log('   - signCount: Counter to help detect cloned authenticators');
-        log('   - (base64): ' + bufToB64u(credential.response.authenticatorData));
-        log('2. clientDataJSON: A JSON string containing:');
-        log('   - type: "webauthn.get"');
-        log('   - challenge: The base64url-encoded challenge from the server');
-        log('   - origin: The origin that initiated the authentication');
-        log('   - crossOrigin: Whether the request was cross-origin');
-        log('   (decoded): ' + new TextDecoder().decode(credential.response.clientDataJSON));
-        log('3. signature: An ArrayBuffer containing the signature of authenticatorData and clientDataJSON');
-        log('   - (base64): ' + bufToB64u(credential.response.signature));
-        if (credential.response.userHandle) {
-            log('4. userHandle: An ArrayBuffer containing the user ID');
-            log('   - (base64): ' + bufToB64u(credential.response.userHandle));
-        }
+        // Step 3: Extract PRF result
+        log('Step 3: Extracting PRF result from authenticator response...');
 
         // Extract and explain the client extension results
         const clientExtResults = credential.getClientExtensionResults();
         log('Client extension results:');
         log(JSON.stringify(clientExtResults, null, 2));
-        log('These extension results contain:');
-        if (clientExtResults.prf) {
-            log('- prf: The PRF extension results');
-            if (clientExtResults.prf.enabled !== undefined) {
-                log('  - enabled: ' + clientExtResults.prf.enabled + ' (whether the authenticator supports the PRF extension)');
-            }
-            if (clientExtResults.prf.results) {
-                log('  - results: The PRF evaluation results');
-            }
-        } else {
-            log('- No PRF extension results found');
-        }
 
         if (!clientExtResults.prf || !clientExtResults.prf.results || !clientExtResults.prf.results.first) {
             throw new Error('PRF extension result not found in authenticator response');
@@ -227,44 +175,92 @@ async function getPrf() {
         log('- Hex format: ' + bufToHex(prfResult));
         log('- Base64 format: ' + btoa(String.fromCharCode(...new Uint8Array(prfResult))));
         log('- Length: ' + prfResult.byteLength + ' bytes');
-        log('This 32-byte value is deterministic for this credential and salt combination.');
-        log('The same credential and salt will always produce the same PRF output.');
-        log('This property makes it useful for deriving encryption keys that can be recovered later.');
 
-        // Step 5: Send PRF result to server
-        log('Step 5: Sending PRF result to server...');
+        // Step 4: Derive key from PRF output
+        log('Step 4: Deriving encryption key from PRF output using Argon2id...');
+        const prfBase64 = btoa(String.fromCharCode(...new Uint8Array(prfResult)));
+        const key = goWasm.deriveKeyFromPRF(prfBase64);
+        log('Derived key (base64):', key);
 
-        const storeResponse = await fetch('/api/secret/storeResult', {
+        // Step 5: Encrypt the secret
+        log('Step 5: Encrypting the secret using AES-256-GCM...');
+        const encryptionResult = goWasm.encryptSecret(key, window.currentSecret.secret);
+        log('Encryption result:');
+        log('- Ciphertext (base64):', encryptionResult.ciphertext);
+        log('- Nonce (base64):', encryptionResult.nonce);
+        log('- AAD (base64):', encryptionResult.aad);
+
+        // Step 6: Send encrypted data to server
+        log('Step 6: Sending encrypted data to server...');
+        const storeResponse = await fetch('/api/secret/store', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 secretID: window.currentSecret.secretID,
-                prfOutput: btoa(String.fromCharCode(...new Uint8Array(prfResult)))
+                salt: window.currentSecret.salt,
+                ciphertext: encryptionResult.ciphertext,
+                nonce: encryptionResult.nonce,
+                aad: encryptionResult.aad
             })
         });
 
         if (!storeResponse.ok) {
             const errorText = await storeResponse.text();
-            throw new Error(`Failed to store PRF result: ${errorText}`);
+            throw new Error(`Failed to store encrypted data: ${errorText}`);
         }
 
         const storeResult = await storeResponse.json();
         log('Server response:', JSON.stringify(storeResult, null, 2));
-        log('PRF output stored successfully on the server.');
+        log('Encrypted data stored successfully on the server.');
+
+        // Step 7: Demonstrate decryption
+        log('Step 7: Demonstrating decryption...');
+        log('Retrieving encrypted data from server...');
+
+        const retrieveResponse = await fetch('/api/secret/retrieve', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                secretID: window.currentSecret.secretID
+            })
+        });
+
+        if (!retrieveResponse.ok) {
+            const errorText = await retrieveResponse.text();
+            throw new Error(`Failed to retrieve encrypted data: ${errorText}`);
+        }
+
+        const retrieveResult = await retrieveResponse.json();
+        log('Retrieved encrypted data:');
+        log('- Secret ID:', retrieveResult.secretID);
+        log('- Salt:', retrieveResult.salt);
+        log('- Ciphertext:', retrieveResult.ciphertext);
+        log('- Nonce:', retrieveResult.nonce);
+        log('- AAD:', retrieveResult.aad);
+
+        // Decrypt the secret
+        log('Decrypting the secret...');
+        const decryptedSecret = goWasm.decryptSecret(
+            key,
+            retrieveResult.ciphertext,
+            retrieveResult.nonce,
+            retrieveResult.aad
+        );
+        log('Decrypted secret (base64):', decryptedSecret);
+        log('Original secret (base64):', window.currentSecret.secret);
+        log('Decryption successful!');
+
         log('');
         log('Security and Cryptographic Properties:');
         log('1. Deterministic: The same credential and salt will always produce the same PRF output');
         log('2. Credential-specific: Different credentials produce different outputs for the same salt');
         log('3. Salt-specific: Different salts produce different outputs for the same credential');
         log('4. High-entropy: The 32-byte output has 256 bits of entropy, suitable for cryptographic keys');
-        log('5. Server-blind: The server never sees the private key, only the PRF output');
-        log('');
-        log('Common Use Cases:');
-        log('1. Envelope encryption: Encrypt data with a key derived from the PRF output');
-        log('2. Password-less file encryption: Use the PRF output to encrypt/decrypt files');
-        log('3. Deterministic authentication: Use the PRF output as a symmetric key for authentication');
+        log('5. Server-blind: The server never sees the private key or the encryption key, only the encrypted data');
         log('');
         log('Try clicking "Get PRF Output" again to verify that the same output is produced.');
 

@@ -146,10 +146,19 @@
                 <h4>PRF Extension</h4>
                 <p>The WebAuthn PRF (Pseudo-Random Function) extension allows deriving a deterministic 32-byte secret from a passkey and an application-chosen salt. This can be used for envelope encryption schemes.</p>
                 <ol>
-                    <li><strong>Add Secret</strong>: Generates a random secretID and salt on the server.</li>
+                    <li><strong>Add Secret</strong>: Generates a random secretID and salt in the browser using WebAssembly.</li>
                     <li><strong>Get PRF Output</strong>: Asks the authenticator to evaluate the PRF extension with that salt, returning a deterministic 32-byte blob.</li>
-                    <li><strong>Deterministic</strong>: The same credential and salt will always produce the same output.</li>
+                    <li><strong>Encryption</strong>: Uses the PRF output to derive an encryption key with Argon2id, then encrypts the secret with AES-256-GCM.</li>
+                    <li><strong>Server Storage</strong>: The server only stores the encrypted data, never seeing the encryption key.</li>
                 </ol>
+
+                <h4>WebAssembly Integration</h4>
+                <p>This demo uses WebAssembly to perform cryptographic operations directly in the browser:</p>
+                <ul>
+                    <li><strong>Random Generation</strong>: SecretID, salt, and secret are generated using secure random functions.</li>
+                    <li><strong>Key Derivation</strong>: Argon2id is used to derive a key from the PRF output.</li>
+                    <li><strong>Encryption/Decryption</strong>: AES-256-GCM is used for authenticated encryption.</li>
+                </ul>
 
                 <h4>Registration Process</h4>
                 <ol>
@@ -191,6 +200,8 @@
         </div>
     </div>
 
+    <!-- WebAssembly support -->
+    <script src="wasm_exec.js"></script>
     <script src="app.js"></script>
     <script>
         // DOM elements

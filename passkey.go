@@ -678,9 +678,9 @@ func main() {
 		logger.Println("Login completed successfully")
 	})
 
-	// Register PRF extension handlers
-	RegisterSecretHandlers(secretStore, userStore, sessionStore, webAuthn, logger)
-	logger.Println("Registered PRF extension handlers")
+	// Register secret handlers
+	RegisterSecretHandlers(secretStore, userStore, sessionStore, logger)
+	logger.Println("Registered secret handlers")
 
 	// Start server
 	port := 8083
