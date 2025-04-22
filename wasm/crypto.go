@@ -12,14 +12,19 @@ import (
 
 // deriveKeyFromPRF derives a key from the PRF output using Argon2id
 func deriveKeyFromPRF(this js.Value, args []js.Value) interface{} {
+	js.Global().Get("console").Call("log", "deriveKeyFromPRF called with args length:", len(args))
+
 	if len(args) < 1 {
 		return js.Error{Value: js.ValueOf("Missing PRF output argument")}
 	}
 
 	// Decode PRF output from base64
 	prfOutputBase64 := args[0].String()
-	prfOutput, err := base64.StdEncoding.DecodeString(prfOutputBase64)
+	js.Global().Get("console").Call("log", "PRF output base64 length:", len(prfOutputBase64))
+	js.Global().Get("console").Call("log", "PRF output base64 value:", prfOutputBase64)
+	prfOutput, err := safeDecodeBase64(prfOutputBase64)
 	if err != nil {
+		js.Global().Get("console").Call("log", "PRF output decode error:", err.Error())
 		return js.Error{Value: js.ValueOf("Invalid PRF output: " + err.Error())}
 	}
 
@@ -28,7 +33,9 @@ func deriveKeyFromPRF(this js.Value, args []js.Value) interface{} {
 	key := argon2.IDKey(prfOutput, nil, 1, 64*1024, 4, 32)
 
 	// Return base64 encoded key
-	return base64.StdEncoding.EncodeToString(key)
+	keyBase64 := base64.StdEncoding.EncodeToString(key)
+	js.Global().Get("console").Call("log", "Derived key base64:", keyBase64)
+	return keyBase64
 }
 
 // safeDecodeBase64 attempts to decode a base64 string, handling URL encoding and padding

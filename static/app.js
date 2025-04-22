@@ -254,8 +254,17 @@ async function getPrf() {
 
         // Step 4: Derive key from PRF output
         log('Step 4: Deriving encryption key from PRF output using Argon2id...');
+
+        // Convert ArrayBuffer to standard base64
         const prfBase64 = btoa(String.fromCharCode(...new Uint8Array(prfResult)));
-        const key = goWasm.deriveKeyFromPRF(prfBase64);
+        log('PRF output (standard base64):', prfBase64);
+
+        // Make sure it's properly padded
+        const paddedPrfBase64 = prfBase64.padEnd(Math.ceil(prfBase64.length / 4) * 4, '=');
+        log('PRF output (padded base64):', paddedPrfBase64);
+
+        // Derive key using WebAssembly
+        const key = goWasm.deriveKeyFromPRF(paddedPrfBase64);
         log('Derived key (base64):', key);
 
         // Store the PRF output and key
@@ -438,10 +447,29 @@ async function decryptSecret() {
         log('- Original secret (base64):', window.currentData.secret);
 
         // Verify the decryption
-        if (decryptedSecret === window.currentData.secret) {
+        // Convert the decrypted secret from standard base64 to base64url for comparison
+        const decryptedSecretB64Url = decryptedSecret.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        log('Decrypted secret (base64url):', decryptedSecretB64Url);
+
+        if (decryptedSecretB64Url === window.currentData.secret) {
             log('Decryption successful! The decrypted secret matches the original secret.');
         } else {
             log('Warning: The decrypted secret does not match the original secret.');
+            log('This could be due to differences in base64 encoding formats.');
+
+            // Try comparing the decoded values
+            try {
+                const originalBytes = atob(window.currentData.secret.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(window.currentData.secret.length / 4) * 4, '='));
+                const decryptedBytes = atob(decryptedSecret.padEnd(Math.ceil(decryptedSecret.length / 4) * 4, '='));
+
+                if (originalBytes === decryptedBytes) {
+                    log('However, the decoded binary values match! The decryption is actually successful.');
+                } else {
+                    log('The decoded binary values also do not match. There might be an actual decryption issue.');
+                }
+            } catch (e) {
+                log('Error comparing decoded values:', e.message);
+            }
         }
 
         log('');
