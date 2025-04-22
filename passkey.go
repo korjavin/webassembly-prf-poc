@@ -190,11 +190,16 @@ func main() {
 	secretStore := NewSecretStore()
 	logger.Println("Initialized in-memory stores")
 
+	// Load data from storage
+	if err := loadFromStorage(userStore, secretStore, logger); err != nil {
+		logger.Printf("Warning: Failed to load data from storage: %v", err)
+	}
+
 	// Initialize WebAuthn
 	webAuthnConfig := &webauthn.Config{
 		RPDisplayName: "Passkey Demo",
 		RPID:          "localhost",
-		RPOrigins:     []string{"http://localhost:8083"},
+		RPOrigins:     []string{"http://localhost:8084"},
 	}
 
 	webAuthn, err := webauthn.New(webAuthnConfig)
@@ -425,6 +430,11 @@ func main() {
 			HttpOnly: true,
 			MaxAge:   3600, // 1 hour
 		})
+
+		// Sync storage
+		if err := storageSync(userStore, secretStore, logger); err != nil {
+			logger.Printf("Warning: Failed to sync storage: %v", err)
+		}
 
 		// Return success
 		w.Header().Set("Content-Type", "application/json")
@@ -683,7 +693,7 @@ func main() {
 	logger.Println("Registered secret handlers")
 
 	// Start server
-	port := 8083
+	port := 8084
 	logger.Printf("Server listening on http://localhost:%d", port)
 	logger.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), nil))
 }

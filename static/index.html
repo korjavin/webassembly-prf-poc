@@ -459,6 +459,10 @@
         }
 
         function base64URLToArrayBuffer(base64url) {
+            if (!base64url) {
+                console.error('Invalid base64url string:', base64url);
+                throw new Error('Invalid base64url string');
+            }
             const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/');
             const binary = atob(base64);
             const bytes = new Uint8Array(binary.length);

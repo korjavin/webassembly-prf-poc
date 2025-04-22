@@ -129,6 +129,11 @@ func RegisterSecretHandlers(secretStore *SecretStore, userStore *UserStore, sess
 		secretStore.AddSecret(username, secret)
 		logger.Printf("Encrypted secret stored for user %s: ID=%s", username, request.SecretID)
 
+		// Sync storage
+		if err := storageSync(userStore, secretStore, logger); err != nil {
+			logger.Printf("Warning: Failed to sync storage: %v", err)
+		}
+
 		// Return success
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
