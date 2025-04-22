@@ -597,7 +597,8 @@ async function encryptSecret() {
             // Update form fields
             ciphertextInput.value = ciphertext;
             nonceInput.value = nonce;
-            aadInput.value = aad;
+            // Keep the plain text version of AAD in the input field
+            // aadInput.value is already set to the plain text version
         } catch (err) {
             log('Error during encryption:', err.message);
             console.error('Encryption error:', err);

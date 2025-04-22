@@ -29,7 +29,7 @@ func NewSecretStore() *SecretStore {
 	}
 }
 
-// AddSecret adds a new secret for a user
+// AddSecret adds a new secret for a user or updates an existing one with the same ID
 func (s *SecretStore) AddSecret(username string, secret EncryptedSecret) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -38,6 +38,16 @@ func (s *SecretStore) AddSecret(username string, secret EncryptedSecret) {
 		s.secretsByUser[username] = []EncryptedSecret{}
 	}
 
+	// Check if a secret with the same ID already exists
+	for i, existingSecret := range s.secretsByUser[username] {
+		if existingSecret.ID == secret.ID {
+			// Replace the existing secret
+			s.secretsByUser[username][i] = secret
+			return
+		}
+	}
+
+	// If no existing secret with the same ID was found, append the new one
 	s.secretsByUser[username] = append(s.secretsByUser[username], secret)
 }
 
