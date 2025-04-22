@@ -6,17 +6,34 @@ import (
 	"syscall/js"
 )
 
+// Global variables to prevent garbage collection of function values
+var (
+	generateRandomBytesFunc js.Func
+	deriveKeyFromPRFFunc    js.Func
+	encryptSecretFunc       js.Func
+	decryptSecretFunc       js.Func
+)
+
 func main() {
 	// Create a channel to keep the program running
 	c := make(chan struct{}, 0)
 
+	// Initialize function values
+	generateRandomBytesFunc = js.FuncOf(generateRandomBytes)
+	deriveKeyFromPRFFunc = js.FuncOf(deriveKeyFromPRF)
+	encryptSecretFunc = js.FuncOf(encryptSecret)
+	decryptSecretFunc = js.FuncOf(decryptSecret)
+
 	// Register JavaScript functions
 	js.Global().Set("goWasm", map[string]interface{}{
-		"generateRandomBytes": js.FuncOf(generateRandomBytes),
-		"deriveKeyFromPRF":    js.FuncOf(deriveKeyFromPRF),
-		"encryptSecret":       js.FuncOf(encryptSecret),
-		"decryptSecret":       js.FuncOf(decryptSecret),
+		"generateRandomBytes": generateRandomBytesFunc,
+		"deriveKeyFromPRF":    deriveKeyFromPRFFunc,
+		"encryptSecret":       encryptSecretFunc,
+		"decryptSecret":       decryptSecretFunc,
 	})
+
+	// Print a message to the console
+	js.Global().Get("console").Call("log", "WebAssembly module initialized")
 
 	// Keep the program running
 	<-c

@@ -3,17 +3,30 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize UI elements
     const addSecretBtn = document.getElementById('addSecretBtn');
     const getPrfBtn = document.getElementById('getPrfBtn');
+    const encryptBtn = document.getElementById('encryptBtn');
+    const decryptBtn = document.getElementById('decryptBtn');
     const logElement = document.getElementById('log');
 
-    // Disable getPrfBtn initially
+    // Disable buttons initially
     getPrfBtn.disabled = true;
+    encryptBtn.disabled = true;
+    decryptBtn.disabled = true;
 
-    // Store current secret
-    window.currentSecret = null;
+    // Store current data
+    window.currentData = {
+        secret: null,
+        secretID: null,
+        salt: null,
+        prfOutput: null,
+        key: null,
+        encrypted: false
+    };
 
     // Add event listeners
     if (addSecretBtn) addSecretBtn.addEventListener('click', addSecret);
     if (getPrfBtn) getPrfBtn.addEventListener('click', getPrf);
+    if (encryptBtn) encryptBtn.addEventListener('click', encryptSecret);
+    if (decryptBtn) decryptBtn.addEventListener('click', decryptSecret);
 
     // Helper functions for conversion and logging
     window.b64uToBuf = str => {
@@ -77,11 +90,14 @@ async function addSecret() {
         const secret = goWasm.generateRandomBytes(32);
         log('Generated secret:', secret);
 
-        // Store the secret locally
-        window.currentSecret = {
+        // Store the data locally
+        window.currentData = {
             secretID,
             salt,
-            secret
+            secret,
+            prfOutput: null,
+            key: null,
+            encrypted: false
         };
 
         log('Secret generated successfully:');
@@ -90,8 +106,10 @@ async function addSecret() {
         log('Secret:', secret);
         log('These values are generated in the browser using WebAssembly.');
 
-        // Enable the getPrfBtn
+        // Enable the getPrfBtn, disable others
         document.getElementById('getPrfBtn').disabled = false;
+        document.getElementById('encryptBtn').disabled = true;
+        document.getElementById('decryptBtn').disabled = true;
 
     } catch (error) {
         log('Error adding secret:', error.message);
@@ -102,12 +120,12 @@ async function addSecret() {
 // Get PRF output
 async function getPrf() {
     try {
-        if (!window.currentSecret) {
+        if (!window.currentData || !window.currentData.secret) {
             log('No secret available. Please add a secret first.');
             return;
         }
 
-        log('Getting PRF output for secret ID:', window.currentSecret.secretID);
+        log('Getting PRF output for secret ID:', window.currentData.secretID);
 
         // Step 1: Create WebAuthn options with PRF extension
         log('Step 1: Creating WebAuthn options with PRF extension...');
@@ -125,7 +143,7 @@ async function getPrf() {
                 extensions: {
                     prf: {
                         eval: {
-                            first: b64uToBuf(window.currentSecret.salt)
+                            first: b64uToBuf(window.currentData.salt)
                         }
                     }
                 }
@@ -140,7 +158,7 @@ async function getPrf() {
                 extensions: options.publicKey.extensions ? {
                     prf: options.publicKey.extensions.prf ? {
                         eval: options.publicKey.extensions.prf.eval ? {
-                            first: 'ArrayBuffer (base64): ' + window.currentSecret.salt
+                            first: 'ArrayBuffer (base64): ' + window.currentData.salt
                         } : undefined
                     } : undefined
                 } : undefined
@@ -182,24 +200,51 @@ async function getPrf() {
         const key = goWasm.deriveKeyFromPRF(prfBase64);
         log('Derived key (base64):', key);
 
-        // Step 5: Encrypt the secret
-        log('Step 5: Encrypting the secret using AES-256-GCM...');
-        const encryptionResult = goWasm.encryptSecret(key, window.currentSecret.secret);
+        // Store the PRF output and key
+        window.currentData.prfOutput = prfBase64;
+        window.currentData.key = key;
+
+        // Enable the encrypt button
+        document.getElementById('encryptBtn').disabled = false;
+
+        log('');
+        log('PRF output and key derived successfully.');
+        log('You can now encrypt the secret by clicking the "Encrypt Secret" button.');
+
+    } catch (error) {
+        log('Error getting PRF output:', error.message);
+        console.error('Error getting PRF output:', error);
+    }
+}
+
+// Encrypt secret
+async function encryptSecret() {
+    try {
+        if (!window.currentData || !window.currentData.key) {
+            log('No key available. Please get PRF output first.');
+            return;
+        }
+
+        log('Encrypting secret...');
+
+        // Step 1: Encrypt the secret using AES-256-GCM
+        log('Step 1: Encrypting the secret using AES-256-GCM...');
+        const encryptionResult = goWasm.encryptSecret(window.currentData.key, window.currentData.secret);
         log('Encryption result:');
         log('- Ciphertext (base64):', encryptionResult.ciphertext);
         log('- Nonce (base64):', encryptionResult.nonce);
         log('- AAD (base64):', encryptionResult.aad);
 
-        // Step 6: Send encrypted data to server
-        log('Step 6: Sending encrypted data to server...');
+        // Step 2: Send encrypted data to server
+        log('Step 2: Sending encrypted data to server...');
         const storeResponse = await fetch('/api/secret/store', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                secretID: window.currentSecret.secretID,
-                salt: window.currentSecret.salt,
+                secretID: window.currentData.secretID,
+                salt: window.currentData.salt,
                 ciphertext: encryptionResult.ciphertext,
                 nonce: encryptionResult.nonce,
                 aad: encryptionResult.aad
@@ -215,9 +260,34 @@ async function getPrf() {
         log('Server response:', JSON.stringify(storeResult, null, 2));
         log('Encrypted data stored successfully on the server.');
 
-        // Step 7: Demonstrate decryption
-        log('Step 7: Demonstrating decryption...');
-        log('Retrieving encrypted data from server...');
+        // Update state
+        window.currentData.encrypted = true;
+
+        // Enable decrypt button
+        document.getElementById('decryptBtn').disabled = false;
+
+        log('');
+        log('Secret encrypted and stored successfully.');
+        log('You can now decrypt the secret by clicking the "Decrypt Secret" button.');
+
+    } catch (error) {
+        log('Error encrypting secret:', error.message);
+        console.error('Error encrypting secret:', error);
+    }
+}
+
+// Decrypt secret
+async function decryptSecret() {
+    try {
+        if (!window.currentData || !window.currentData.key || !window.currentData.encrypted) {
+            log('No encrypted data available. Please encrypt a secret first.');
+            return;
+        }
+
+        log('Decrypting secret...');
+
+        // Step 1: Retrieve encrypted data from server
+        log('Step 1: Retrieving encrypted data from server...');
 
         const retrieveResponse = await fetch('/api/secret/retrieve', {
             method: 'POST',
@@ -225,7 +295,7 @@ async function getPrf() {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                secretID: window.currentSecret.secretID
+                secretID: window.currentData.secretID
             })
         });
 
@@ -242,17 +312,24 @@ async function getPrf() {
         log('- Nonce:', retrieveResult.nonce);
         log('- AAD:', retrieveResult.aad);
 
-        // Decrypt the secret
-        log('Decrypting the secret...');
+        // Step 2: Decrypt the secret
+        log('Step 2: Decrypting the secret...');
         const decryptedSecret = goWasm.decryptSecret(
-            key,
+            window.currentData.key,
             retrieveResult.ciphertext,
             retrieveResult.nonce,
             retrieveResult.aad
         );
-        log('Decrypted secret (base64):', decryptedSecret);
-        log('Original secret (base64):', window.currentSecret.secret);
-        log('Decryption successful!');
+        log('Decryption result:');
+        log('- Decrypted secret (base64):', decryptedSecret);
+        log('- Original secret (base64):', window.currentData.secret);
+
+        // Verify the decryption
+        if (decryptedSecret === window.currentData.secret) {
+            log('Decryption successful! The decrypted secret matches the original secret.');
+        } else {
+            log('Warning: The decrypted secret does not match the original secret.');
+        }
 
         log('');
         log('Security and Cryptographic Properties:');
@@ -261,11 +338,9 @@ async function getPrf() {
         log('3. Salt-specific: Different salts produce different outputs for the same credential');
         log('4. High-entropy: The 32-byte output has 256 bits of entropy, suitable for cryptographic keys');
         log('5. Server-blind: The server never sees the private key or the encryption key, only the encrypted data');
-        log('');
-        log('Try clicking "Get PRF Output" again to verify that the same output is produced.');
 
     } catch (error) {
-        log('Error getting PRF output:', error.message);
-        console.error('Error getting PRF output:', error);
+        log('Error decrypting secret:', error.message);
+        console.error('Error decrypting secret:', error);
     }
 }
