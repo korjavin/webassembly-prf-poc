@@ -199,8 +199,51 @@
         </div>
 
         <div class="card">
-            <h2>PRF Output</h2>
-            <p>This section shows the PRF output from the authenticator.</p>
+            <h2>Secret Management</h2>
+            <p>This section allows you to view and edit secret attributes.</p>
+
+            <div class="form-group">
+                <label for="secretID">Secret ID</label>
+                <input type="text" id="secretID" placeholder="Secret ID (base64url)">
+            </div>
+
+            <div class="form-group">
+                <label for="salt">Salt</label>
+                <input type="text" id="salt" placeholder="Salt (base64url)">
+            </div>
+
+            <div class="form-group">
+                <label for="secret">Secret</label>
+                <input type="text" id="secret" placeholder="Secret (base64url)">
+            </div>
+
+            <div class="form-group">
+                <label for="key">Derived Key</label>
+                <input type="text" id="key" placeholder="Derived Key (base64)">
+            </div>
+
+            <div class="form-group">
+                <label for="ciphertext">Ciphertext</label>
+                <input type="text" id="ciphertext" placeholder="Ciphertext (base64)">
+            </div>
+
+            <div class="form-group">
+                <label for="nonce">Nonce</label>
+                <input type="text" id="nonce" placeholder="Nonce (base64)">
+            </div>
+
+            <div class="form-group">
+                <label for="aad">AAD</label>
+                <input type="text" id="aad" placeholder="AAD (base64)">
+            </div>
+
+            <div class="button-group" style="margin-top: 10px;">
+                <button id="newSecretBtn" class="primary">New Secret</button>
+                <button id="loadSecretsBtn" class="secondary">Load Secrets</button>
+            </div>
+
+            <div id="secretsList" class="log-container" style="max-height: 150px; margin-top: 10px;"></div>
+
             <pre id="log" class="log-container"></pre>
         </div>
     </div>

@@ -60,6 +60,23 @@ func (s *SecretStore) GetSecretByID(username, secretID string) (*EncryptedSecret
 	return nil, false
 }
 
+// GetSecretsByUsername returns all secrets for a specific user
+func (s *SecretStore) GetSecretsByUsername(username string) []EncryptedSecret {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	secrets, ok := s.secretsByUser[username]
+	if !ok {
+		return []EncryptedSecret{}
+	}
+
+	// Return a copy of the secrets to avoid race conditions
+	result := make([]EncryptedSecret, len(secrets))
+	copy(result, secrets)
+
+	return result
+}
+
 // RegisterSecretHandlers registers the secret-related HTTP handlers
 func RegisterSecretHandlers(secretStore *SecretStore, userStore *UserStore, sessionStore *SessionStore, logger *log.Logger) {
 	// Handler for storing an encrypted secret
@@ -201,6 +218,63 @@ func RegisterSecretHandlers(secretStore *SecretStore, userStore *UserStore, sess
 			"ciphertext": secret.Ciphertext,
 			"nonce":      secret.Nonce,
 			"aad":        secret.AAD,
+		})
+	})
+
+	// Handler for listing all secrets for a user
+	http.HandleFunc("/api/secret/list", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// Get username from session cookie
+		cookie, err := r.Cookie("session_id")
+		if err != nil {
+			logger.Printf("No session cookie found: %v", err)
+			http.Error(w, "Not logged in", http.StatusUnauthorized)
+			return
+		}
+
+		// Get session data
+		sessionID := cookie.Value
+		session, ok := sessionStore.GetSession(sessionID)
+		if !ok {
+			logger.Printf("Session not found: %s", sessionID)
+			http.Error(w, "Session not found", http.StatusUnauthorized)
+			return
+		}
+
+		// Get user by ID
+		_, username, ok := userStore.GetUserByID(session.UserID)
+		if !ok {
+			logger.Printf("User not found with ID: %x", session.UserID)
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		logger.Printf("Listing secrets for user: %s", username)
+
+		// Get all secrets for the user
+		secrets := secretStore.GetSecretsByUsername(username)
+		logger.Printf("Found %d secrets for user %s", len(secrets), username)
+
+		// Convert to a list of maps for JSON response
+		secretsList := make([]map[string]string, len(secrets))
+		for i, secret := range secrets {
+			secretsList[i] = map[string]string{
+				"secretID":   secret.ID,
+				"salt":       secret.Salt,
+				"ciphertext": secret.Ciphertext,
+				"nonce":      secret.Nonce,
+				"aad":        secret.AAD,
+			}
+		}
+
+		// Return the list of secrets
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":  "success",
+			"secrets": secretsList,
 		})
 	})
 }

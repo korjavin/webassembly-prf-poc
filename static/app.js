@@ -1,11 +1,42 @@
 // Helper utilities for WebAuthn PRF extension demo
+// Global variables for UI elements
+let addSecretBtn;
+let getPrfBtn;
+let encryptBtn;
+let decryptBtn;
+let newSecretBtn;
+let loadSecretsBtn;
+let secretsList;
+let logElement;
+
+// Global variables for form fields
+let secretIDInput;
+let saltInput;
+let secretInput;
+let keyInput;
+let ciphertextInput;
+let nonceInput;
+let aadInput;
+
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize UI elements
-    const addSecretBtn = document.getElementById('addSecretBtn');
-    const getPrfBtn = document.getElementById('getPrfBtn');
-    const encryptBtn = document.getElementById('encryptBtn');
-    const decryptBtn = document.getElementById('decryptBtn');
-    const logElement = document.getElementById('log');
+    addSecretBtn = document.getElementById('addSecretBtn');
+    getPrfBtn = document.getElementById('getPrfBtn');
+    encryptBtn = document.getElementById('encryptBtn');
+    decryptBtn = document.getElementById('decryptBtn');
+    newSecretBtn = document.getElementById('newSecretBtn');
+    loadSecretsBtn = document.getElementById('loadSecretsBtn');
+    secretsList = document.getElementById('secretsList');
+    logElement = document.getElementById('log');
+
+    // Form fields
+    secretIDInput = document.getElementById('secretID');
+    saltInput = document.getElementById('salt');
+    secretInput = document.getElementById('secret');
+    keyInput = document.getElementById('key');
+    ciphertextInput = document.getElementById('ciphertext');
+    nonceInput = document.getElementById('nonce');
+    aadInput = document.getElementById('aad');
 
     // Disable buttons initially
     getPrfBtn.disabled = true;
@@ -19,18 +50,14 @@ document.addEventListener('DOMContentLoaded', function() {
         salt: null,
         prfOutput: null,
         key: null,
-        encrypted: false
+        encrypted: false,
+        secrets: []
     };
 
     // Add event listeners with debugging
     console.log('Setting up event listeners...');
-    console.log('addSecretBtn:', addSecretBtn);
-    console.log('getPrfBtn:', getPrfBtn);
-    console.log('encryptBtn:', encryptBtn);
-    console.log('decryptBtn:', decryptBtn);
 
     if (addSecretBtn) {
-        console.log('Adding click listener to addSecretBtn');
         addSecretBtn.addEventListener('click', function() {
             console.log('addSecretBtn clicked');
             addSecret();
@@ -38,7 +65,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     if (getPrfBtn) {
-        console.log('Adding click listener to getPrfBtn');
         getPrfBtn.addEventListener('click', function() {
             console.log('getPrfBtn clicked');
             getPrf();
@@ -46,7 +72,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     if (encryptBtn) {
-        console.log('Adding click listener to encryptBtn');
         encryptBtn.addEventListener('click', function() {
             console.log('encryptBtn clicked');
             encryptSecret();
@@ -54,12 +79,63 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     if (decryptBtn) {
-        console.log('Adding click listener to decryptBtn');
         decryptBtn.addEventListener('click', function() {
             console.log('decryptBtn clicked');
             decryptSecret();
         });
     }
+
+    if (newSecretBtn) {
+        newSecretBtn.addEventListener('click', function() {
+            console.log('newSecretBtn clicked');
+            generateNewSecret();
+        });
+    }
+
+    if (loadSecretsBtn) {
+        loadSecretsBtn.addEventListener('click', function() {
+            console.log('loadSecretsBtn clicked');
+            loadSecrets();
+        });
+    }
+
+    // Add event listeners for form fields to update currentData
+    secretIDInput.addEventListener('input', function() {
+        window.currentData.secretID = this.value;
+    });
+
+    saltInput.addEventListener('input', function() {
+        window.currentData.salt = this.value;
+    });
+
+    secretInput.addEventListener('input', function() {
+        window.currentData.secret = this.value;
+    });
+
+    keyInput.addEventListener('input', function() {
+        window.currentData.key = this.value;
+    });
+
+    ciphertextInput.addEventListener('input', function() {
+        if (!window.currentData.encryptionResult) {
+            window.currentData.encryptionResult = {};
+        }
+        window.currentData.encryptionResult.ciphertext = this.value;
+    });
+
+    nonceInput.addEventListener('input', function() {
+        if (!window.currentData.encryptionResult) {
+            window.currentData.encryptionResult = {};
+        }
+        window.currentData.encryptionResult.nonce = this.value;
+    });
+
+    aadInput.addEventListener('input', function() {
+        if (!window.currentData.encryptionResult) {
+            window.currentData.encryptionResult = {};
+        }
+        window.currentData.encryptionResult.aad = this.value;
+    });
 
     // Helper functions for conversion and logging
     window.b64uToBuf = str => {
@@ -84,14 +160,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.bufToHex = buf => {
         return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
-    };
-
-    window.log = function(...args) {
-        if (logElement) {
-            logElement.textContent += args.join(' ') + '\n';
-            logElement.scrollTop = logElement.scrollHeight;
-        }
-        console.log(...args);
     };
 
     // Initialize WebAssembly
@@ -121,6 +189,15 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('WebAssembly initialization error:', err);
     });
 });
+
+// Global log function
+window.log = function(...args) {
+    if (logElement) {
+        logElement.textContent += args.join(' ') + '\n';
+        logElement.scrollTop = logElement.scrollHeight;
+    }
+    console.log(...args);
+};
 
 // Add a new secret
 async function addSecret() {
@@ -155,8 +232,18 @@ async function addSecret() {
             secret,
             prfOutput: null,
             key: null,
-            encrypted: false
+            encrypted: false,
+            secrets: window.currentData ? window.currentData.secrets : []
         };
+
+        // Update form fields
+        secretIDInput.value = secretID;
+        saltInput.value = salt;
+        secretInput.value = secret;
+        keyInput.value = '';
+        ciphertextInput.value = '';
+        nonceInput.value = '';
+        aadInput.value = '';
 
         log('Secret generated successfully:');
         log('Secret ID:', secretID);
@@ -175,10 +262,115 @@ async function addSecret() {
     }
 }
 
+// Function to generate a new secret (same as addSecret but with a different name for clarity)
+async function generateNewSecret() {
+    await addSecret();
+}
+
+// Function to load secrets from the server
+async function loadSecrets() {
+    try {
+        log('Loading secrets from server...');
+
+        const response = await fetch('/api/secret/list', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Failed to load secrets: ${errorText}`);
+        }
+
+        const result = await response.json();
+        log('Retrieved secrets:', JSON.stringify(result, null, 2));
+
+        // Store the secrets
+        window.currentData.secrets = result.secrets || [];
+
+        // Clear the secrets list
+        secretsList.innerHTML = '';
+
+        // Add each secret to the list
+        if (window.currentData.secrets.length === 0) {
+            secretsList.innerHTML = '<div class="log-entry">No secrets found</div>';
+        } else {
+            window.currentData.secrets.forEach((secret, index) => {
+                const secretItem = document.createElement('div');
+                secretItem.className = 'log-entry';
+                secretItem.innerHTML = `<strong>Secret ${index + 1}:</strong> ID=${secret.secretID} <button class="load-secret-btn" data-index="${index}">Load</button>`;
+                secretsList.appendChild(secretItem);
+            });
+
+            // Add event listeners to load buttons
+            document.querySelectorAll('.load-secret-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const index = parseInt(this.getAttribute('data-index'));
+                    loadSecretDetails(index);
+                });
+            });
+        }
+
+        log('Secrets loaded successfully');
+    } catch (error) {
+        log('Error loading secrets:', error.message);
+        console.error('Error loading secrets:', error);
+    }
+}
+
+// Function to load a specific secret's details
+function loadSecretDetails(index) {
+    try {
+        const secret = window.currentData.secrets[index];
+        if (!secret) {
+            throw new Error('Secret not found');
+        }
+
+        log(`Loading secret details for index ${index}:`, JSON.stringify(secret, null, 2));
+
+        // Update form fields
+        secretIDInput.value = secret.secretID;
+        saltInput.value = secret.salt;
+        ciphertextInput.value = secret.ciphertext;
+        nonceInput.value = secret.nonce;
+        aadInput.value = secret.aad;
+
+        // Update currentData
+        window.currentData.secretID = secret.secretID;
+        window.currentData.salt = secret.salt;
+        // Set a placeholder for the secret - it will be populated after decryption
+        window.currentData.secret = 'placeholder-will-be-decrypted';
+        window.currentData.encryptionResult = {
+            ciphertext: secret.ciphertext,
+            nonce: secret.nonce,
+            aad: secret.aad
+        };
+        window.currentData.encrypted = true;
+
+        // Enable buttons
+        getPrfBtn.disabled = false;
+        decryptBtn.disabled = false;
+
+        log('Secret details loaded successfully');
+    } catch (error) {
+        log('Error loading secret details:', error.message);
+        console.error('Error loading secret details:', error);
+    }
+}
+
 // Get PRF output
 async function getPrf() {
     try {
-        if (!window.currentData || !window.currentData.secret) {
+        if (!window.currentData || !window.currentData.salt) {
+            log('No salt available. Please add a secret or load one first.');
+            return;
+        }
+
+        // If we're using a loaded secret, we don't need to check for the secret property
+        // as it will be populated after decryption
+        if (!window.currentData.encrypted && !window.currentData.secret) {
             log('No secret available. Please add a secret first.');
             return;
         }
@@ -271,6 +463,9 @@ async function getPrf() {
         window.currentData.prfOutput = prfBase64;
         window.currentData.key = key;
 
+        // Update form fields
+        keyInput.value = key;
+
         // Enable the encrypt button
         document.getElementById('encryptBtn').disabled = false;
 
@@ -339,6 +534,11 @@ async function encryptSecret() {
                 nonce: nonce,
                 aad: aad
             };
+
+            // Update form fields
+            ciphertextInput.value = ciphertext;
+            nonceInput.value = nonce;
+            aadInput.value = aad;
         } catch (err) {
             log('Error during encryption:', err.message);
             console.error('Encryption error:', err);
@@ -398,26 +598,50 @@ async function decryptSecret() {
 
         log('Decrypting secret...');
 
-        // Step 1: Retrieve encrypted data from server
-        log('Step 1: Retrieving encrypted data from server...');
+        // Step 1: Check if we need to retrieve data from server or use form fields
+        let retrieveResult;
 
-        const retrieveResponse = await fetch('/api/secret/retrieve', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                secretID: window.currentData.secretID
-            })
-        });
+        // If the form fields are filled, use them
+        if (ciphertextInput.value && nonceInput.value && aadInput.value) {
+            log('Step 1: Using form field values for decryption...');
+            retrieveResult = {
+                secretID: secretIDInput.value,
+                salt: saltInput.value,
+                ciphertext: ciphertextInput.value,
+                nonce: nonceInput.value,
+                aad: aadInput.value
+            };
+            log('Using encrypted data from form fields:');
+        } else {
+            // Otherwise retrieve from server
+            log('Step 1: Retrieving encrypted data from server...');
 
-        if (!retrieveResponse.ok) {
-            const errorText = await retrieveResponse.text();
-            throw new Error(`Failed to retrieve encrypted data: ${errorText}`);
+            const retrieveResponse = await fetch('/api/secret/retrieve', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    secretID: window.currentData.secretID
+                })
+            });
+
+            if (!retrieveResponse.ok) {
+                const errorText = await retrieveResponse.text();
+                throw new Error(`Failed to retrieve encrypted data: ${errorText}`);
+            }
+
+            retrieveResult = await retrieveResponse.json();
+            log('Retrieved encrypted data from server:');
+
+            // Update form fields with retrieved data
+            secretIDInput.value = retrieveResult.secretID;
+            saltInput.value = retrieveResult.salt;
+            ciphertextInput.value = retrieveResult.ciphertext;
+            nonceInput.value = retrieveResult.nonce;
+            aadInput.value = retrieveResult.aad;
         }
 
-        const retrieveResult = await retrieveResponse.json();
-        log('Retrieved encrypted data:');
         log('- Secret ID:', retrieveResult.secretID);
         log('- Salt:', retrieveResult.salt);
         log('- Ciphertext:', retrieveResult.ciphertext);
@@ -446,12 +670,21 @@ async function decryptSecret() {
         log('- Decrypted secret (base64):', decryptedSecret);
         log('- Original secret (base64):', window.currentData.secret);
 
+        // Update the secret input field with the decrypted secret
+        secretInput.value = decryptedSecret.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        window.currentData.secret = secretInput.value;
+
         // Verify the decryption
         // Convert the decrypted secret from standard base64 to base64url for comparison
         const decryptedSecretB64Url = decryptedSecret.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
         log('Decrypted secret (base64url):', decryptedSecretB64Url);
 
-        if (decryptedSecretB64Url === window.currentData.secret) {
+        // If we're decrypting a loaded secret, we don't have the original to compare
+        if (window.currentData.secret === 'placeholder-will-be-decrypted') {
+            log('Decryption successful! This was a loaded secret, so we have no original to compare.');
+            // Update the secret with the decrypted value
+            window.currentData.secret = decryptedSecretB64Url;
+        } else if (decryptedSecretB64Url === window.currentData.secret) {
             log('Decryption successful! The decrypted secret matches the original secret.');
         } else {
             log('Warning: The decrypted secret does not match the original secret.');
