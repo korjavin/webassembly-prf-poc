@@ -190,6 +190,28 @@ window.log = function(...args) {
     console.log(...args);
 };
 
+// Helper functions for text encoding/decoding
+function textToBase64(text) {
+    // Convert text to base64
+    const base64 = btoa(text);
+    // Convert to base64url format
+    return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function base64ToText(base64) {
+    try {
+        // Convert from base64url to standard base64
+        const standardBase64 = base64.replace(/-/g, '+').replace(/_/g, '/');
+        // Add padding if needed
+        const paddedBase64 = standardBase64.padEnd(Math.ceil(standardBase64.length / 4) * 4, '=');
+        // Decode base64 to text
+        return atob(paddedBase64);
+    } catch (e) {
+        console.error('Error decoding base64:', e);
+        return base64; // Return original if decoding fails
+    }
+}
+
 // Add a new secret
 async function addSecret() {
     try {
@@ -203,24 +225,33 @@ async function addSecret() {
         const salt = goWasm.generateRandomBytes(32);
         log('Generated salt:', salt);
 
-        // Generate random secret (32 bytes) using WebAssembly
-        const secret = goWasm.generateRandomBytes(32);
-        log('Generated secret:', secret);
+        // Generate random secret (32 bytes) using WebAssembly and convert to text
+        const secretBase64 = goWasm.generateRandomBytes(32);
+        // For demo purposes, we'll use a simple text secret instead of the random bytes
+        const secretText = 'This is a secret message that will be encrypted';
+        log('Generated secret (text):', secretText);
+        log('Secret as base64url:', textToBase64(secretText));
 
         // Ensure all values are standard base64 (not base64url)
         const standardSecretID = secretID.replace(/-/g, '+').replace(/_/g, '/');
         const standardSalt = salt.replace(/-/g, '+').replace(/_/g, '/');
-        const standardSecret = secret.replace(/-/g, '+').replace(/_/g, '/');
 
         log('Standard base64 secretID:', standardSecretID);
         log('Standard base64 salt:', standardSalt);
-        log('Standard base64 secret:', standardSecret);
+
+        // Set a default AAD (Additional Authenticated Data)
+        const aadText = 'WebAuthnPRFDemo!';
+        log('Default AAD (text):', aadText);
+        log('AAD as base64url:', textToBase64(aadText));
 
         // Store the data locally
         window.currentData = {
             secretID,
             salt,
-            secret,
+            secret: textToBase64(secretText),  // Store base64 version for encryption
+            secretText: secretText,           // Store text version for display
+            aad: textToBase64(aadText),       // Store base64 version for encryption
+            aadText: aadText,                 // Store text version for display
             prfOutput: null,
             key: null,
             encrypted: false,
@@ -230,11 +261,11 @@ async function addSecret() {
         // Update form fields
         secretIDInput.value = secretID;
         saltInput.value = salt;
-        secretInput.value = secret;
+        secretInput.value = secretText;  // Display as plain text
         keyInput.value = '';
         ciphertextInput.value = '';
         nonceInput.value = '';
-        aadInput.value = '';
+        aadInput.value = aadText;  // Display as plain text
 
         log('Secret generated successfully:');
         log('Secret ID:', secretID);
@@ -321,18 +352,30 @@ function loadSecretDetails(index) {
 
         log(`Loading secret details for index ${index}:`, JSON.stringify(secret, null, 2));
 
+        // Try to decode AAD from base64 to text
+        let aadText = '';
+        try {
+            aadText = base64ToText(secret.aad);
+            log('Decoded AAD text:', aadText);
+        } catch (e) {
+            log('Could not decode AAD as text, using base64 value');
+            aadText = secret.aad;
+        }
+
         // Update form fields
         secretIDInput.value = secret.secretID;
         saltInput.value = secret.salt;
         ciphertextInput.value = secret.ciphertext;
         nonceInput.value = secret.nonce;
-        aadInput.value = secret.aad;
+        aadInput.value = aadText;  // Display as text if possible
 
         // Update currentData
         window.currentData.secretID = secret.secretID;
         window.currentData.salt = secret.salt;
         // Set a placeholder for the secret - it will be populated after decryption
         window.currentData.secret = 'placeholder-will-be-decrypted';
+        window.currentData.aad = secret.aad;  // Store base64 version
+        window.currentData.aadText = aadText; // Store text version
         window.currentData.encryptionResult = {
             ciphertext: secret.ciphertext,
             nonce: secret.nonce,
@@ -488,13 +531,32 @@ async function encryptSecret() {
         log('Secret:', window.currentData.secret);
 
         try {
+            // Get the current secret text from the input field
+            const currentSecretText = secretInput.value;
+            // Convert to base64url for encryption
+            const secretBase64url = textToBase64(currentSecretText);
+            // Update the currentData with the new secret
+            window.currentData.secret = secretBase64url;
+            window.currentData.secretText = currentSecretText;
+
+            // Get the current AAD text from the input field
+            const currentAadText = aadInput.value;
+            // Convert to base64url for encryption
+            const aadBase64url = textToBase64(currentAadText);
+            // Update the currentData with the new AAD
+            window.currentData.aad = aadBase64url;
+            window.currentData.aadText = currentAadText;
+
             // Convert secret to standard base64 (not base64url)
-            // First, convert base64url to standard base64 by replacing - with + and _ with /
-            const secretBase64 = window.currentData.secret.replace(/-/g, '+').replace(/_/g, '/');
+            const secretBase64 = secretBase64url.replace(/-/g, '+').replace(/_/g, '/');
             // Add padding if needed
             const paddedSecretBase64 = secretBase64.padEnd(Math.ceil(secretBase64.length / 4) * 4, '=');
 
+            log('Secret text:', currentSecretText);
+            log('Secret (base64url):', secretBase64url);
             log('Secret (standard base64):', paddedSecretBase64);
+            log('AAD text:', currentAadText);
+            log('AAD (base64url):', aadBase64url);
 
             // Call the WebAssembly function
             const encryptionResult = goWasm.encryptSecret(window.currentData.key, paddedSecretBase64);
@@ -595,12 +657,28 @@ async function decryptSecret() {
         // If the form fields are filled, use them
         if (ciphertextInput.value && nonceInput.value && aadInput.value) {
             log('Step 1: Using form field values for decryption...');
+
+            // Convert AAD from text to base64 if needed
+            const aadText = aadInput.value;
+            let aadBase64 = aadInput.value;
+
+            // Check if the AAD is already in base64 format
+            try {
+                // Try to decode it as base64
+                atob(aadBase64.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(aadBase64.length / 4) * 4, '='));
+                log('AAD is already in base64 format');
+            } catch (e) {
+                // If it fails, it's probably text that needs to be encoded
+                aadBase64 = textToBase64(aadText);
+                log('Converted AAD from text to base64:', aadBase64);
+            }
+
             retrieveResult = {
                 secretID: secretIDInput.value,
                 salt: saltInput.value,
                 ciphertext: ciphertextInput.value,
                 nonce: nonceInput.value,
-                aad: aadInput.value
+                aad: aadBase64
             };
             log('Using encrypted data from form fields:');
         } else {
@@ -661,13 +739,18 @@ async function decryptSecret() {
         log('- Decrypted secret (base64):', decryptedSecret);
         log('- Original secret (base64):', window.currentData.secret);
 
-        // Update the secret input field with the decrypted secret
-        secretInput.value = decryptedSecret.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-        window.currentData.secret = secretInput.value;
+        // Convert the decrypted secret from base64 to text
+        const decryptedSecretB64Url = decryptedSecret.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+        const decryptedText = base64ToText(decryptedSecretB64Url);
+
+        // Update the secret input field with the decrypted text
+        secretInput.value = decryptedText;
+        window.currentData.secret = decryptedSecretB64Url;
+        window.currentData.secretText = decryptedText;
+
+        log('Decrypted secret (text):', decryptedText);
 
         // Verify the decryption
-        // Convert the decrypted secret from standard base64 to base64url for comparison
-        const decryptedSecretB64Url = decryptedSecret.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
         log('Decrypted secret (base64url):', decryptedSecretB64Url);
 
         // If we're decrypting a loaded secret, we don't have the original to compare
