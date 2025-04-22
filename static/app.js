@@ -1,6 +1,5 @@
 // Helper utilities for WebAuthn PRF extension demo
 // Global variables for UI elements
-let addSecretBtn;
 let getPrfBtn;
 let encryptBtn;
 let decryptBtn;
@@ -20,7 +19,6 @@ let aadInput;
 
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize UI elements
-    addSecretBtn = document.getElementById('addSecretBtn');
     getPrfBtn = document.getElementById('getPrfBtn');
     encryptBtn = document.getElementById('encryptBtn');
     decryptBtn = document.getElementById('decryptBtn');
@@ -56,13 +54,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add event listeners with debugging
     console.log('Setting up event listeners...');
-
-    if (addSecretBtn) {
-        addSecretBtn.addEventListener('click', function() {
-            console.log('addSecretBtn clicked');
-            addSecret();
-        });
-    }
 
     if (getPrfBtn) {
         getPrfBtn.addEventListener('click', function() {

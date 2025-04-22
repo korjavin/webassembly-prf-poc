@@ -133,63 +133,10 @@
             </div>
 
             <div class="button-group" style="margin-top: 10px;">
-                <button id="addSecretBtn" class="primary">Add Secret</button>
                 <button id="getPrfBtn" class="secondary" disabled>Get PRF Output</button>
             </div>
 
-            <div class="button-group" style="margin-top: 10px;">
-                <button id="encryptBtn" class="primary" disabled>Encrypt Secret</button>
-                <button id="decryptBtn" class="secondary" disabled>Decrypt Secret</button>
-            </div>
-
             <div id="statusMessage" class="status"></div>
-
-            <div class="explanation">
-                <h3>How Passkeys Work</h3>
-                <p>Passkeys are a more secure alternative to passwords. They use public key cryptography to authenticate users without sending any secrets over the network.</p>
-
-                <h4>PRF Extension</h4>
-                <p>The WebAuthn PRF (Pseudo-Random Function) extension allows deriving a deterministic 32-byte secret from a passkey and an application-chosen salt. This can be used for envelope encryption schemes.</p>
-                <ol>
-                    <li><strong>Add Secret</strong>: Generates a random secretID and salt in the browser using WebAssembly.</li>
-                    <li><strong>Get PRF Output</strong>: Asks the authenticator to evaluate the PRF extension with that salt, returning a deterministic 32-byte blob.</li>
-                    <li><strong>Encryption</strong>: Uses the PRF output to derive an encryption key with Argon2id, then encrypts the secret with AES-256-GCM.</li>
-                    <li><strong>Server Storage</strong>: The server only stores the encrypted data, never seeing the encryption key.</li>
-                </ol>
-
-                <h4>WebAssembly Integration</h4>
-                <p>This demo uses WebAssembly to perform cryptographic operations directly in the browser:</p>
-                <ul>
-                    <li><strong>Random Generation</strong>: SecretID, salt, and secret are generated using secure random functions.</li>
-                    <li><strong>Key Derivation</strong>: Argon2id is used to derive a key from the PRF output.</li>
-                    <li><strong>Encryption/Decryption</strong>: AES-256-GCM is used for authenticated encryption.</li>
-                </ul>
-
-                <h4>Registration Process</h4>
-                <ol>
-                    <li><strong>User Identification</strong>: You enter a username to identify yourself.</li>
-                    <li><strong>Challenge Generation</strong>: The server generates a random challenge.</li>
-                    <li><strong>Key Pair Creation</strong>: Your browser creates a new public-private key pair.</li>
-                    <li><strong>Attestation</strong>: The browser signs the challenge with the private key and sends the public key to the server.</li>
-                    <li><strong>Verification</strong>: The server verifies the signature and stores the public key with your account.</li>
-                </ol>
-
-                <h4>Authentication Process</h4>
-                <ol>
-                    <li><strong>User Identification</strong>: You enter your username.</li>
-                    <li><strong>Challenge Generation</strong>: The server sends a new random challenge.</li>
-                    <li><strong>Signature Creation</strong>: Your browser uses the private key to sign the challenge.</li>
-                    <li><strong>Verification</strong>: The server verifies the signature using your stored public key.</li>
-                </ol>
-
-                <h4>Security Benefits</h4>
-                <ul>
-                    <li><strong>Phishing Resistant</strong>: Passkeys are bound to the website's origin, preventing phishing attacks.</li>
-                    <li><strong>No Shared Secrets</strong>: The private key never leaves your device.</li>
-                    <li><strong>No Password Database</strong>: Servers only store public keys, which can't be used to authenticate.</li>
-                    <li><strong>Biometric Protection</strong>: Keys can be protected by your device's biometrics (fingerprint, face).</li>
-                </ul>
-            </div>
         </div>
 
         <div class="card">
@@ -242,9 +189,63 @@
                 <button id="loadSecretsBtn" class="secondary">Load Secrets</button>
             </div>
 
+            <div class="button-group" style="margin-top: 10px;">
+                <button id="encryptBtn" class="primary" disabled>Encrypt Secret</button>
+                <button id="decryptBtn" class="secondary" disabled>Decrypt Secret</button>
+            </div>
+
             <div id="secretsList" class="log-container" style="max-height: 150px; margin-top: 10px;"></div>
 
             <pre id="log" class="log-container"></pre>
+        </div>
+
+        <div class="card">
+            <h2>How Passkeys Work</h2>
+            <div class="explanation">
+                <p>Passkeys are a more secure alternative to passwords. They use public key cryptography to authenticate users without sending any secrets over the network.</p>
+
+                <h4>PRF Extension</h4>
+                <p>The WebAuthn PRF (Pseudo-Random Function) extension allows deriving a deterministic 32-byte secret from a passkey and an application-chosen salt. This can be used for envelope encryption schemes.</p>
+                <ol>
+                    <li><strong>New Secret</strong>: Generates a random secretID and salt in the browser using WebAssembly.</li>
+                    <li><strong>Get PRF Output</strong>: Asks the authenticator to evaluate the PRF extension with that salt, returning a deterministic 32-byte blob.</li>
+                    <li><strong>Encryption</strong>: Uses the PRF output to derive an encryption key with Argon2id, then encrypts the secret with AES-256-GCM.</li>
+                    <li><strong>Server Storage</strong>: The server only stores the encrypted data, never seeing the encryption key.</li>
+                </ol>
+
+                <h4>WebAssembly Integration</h4>
+                <p>This demo uses WebAssembly to perform cryptographic operations directly in the browser:</p>
+                <ul>
+                    <li><strong>Random Generation</strong>: SecretID, salt, and secret are generated using secure random functions.</li>
+                    <li><strong>Key Derivation</strong>: Argon2id is used to derive a key from the PRF output.</li>
+                    <li><strong>Encryption/Decryption</strong>: AES-256-GCM is used for authenticated encryption.</li>
+                </ul>
+
+                <h4>Registration Process</h4>
+                <ol>
+                    <li><strong>User Identification</strong>: You enter a username to identify yourself.</li>
+                    <li><strong>Challenge Generation</strong>: The server generates a random challenge.</li>
+                    <li><strong>Key Pair Creation</strong>: Your browser creates a new public-private key pair.</li>
+                    <li><strong>Attestation</strong>: The browser signs the challenge with the private key and sends the public key to the server.</li>
+                    <li><strong>Verification</strong>: The server verifies the signature and stores the public key with your account.</li>
+                </ol>
+
+                <h4>Authentication Process</h4>
+                <ol>
+                    <li><strong>User Identification</strong>: You enter your username.</li>
+                    <li><strong>Challenge Generation</strong>: The server sends a new random challenge.</li>
+                    <li><strong>Signature Creation</strong>: Your browser uses the private key to sign the challenge.</li>
+                    <li><strong>Verification</strong>: The server verifies the signature using your stored public key.</li>
+                </ol>
+
+                <h4>Security Benefits</h4>
+                <ul>
+                    <li><strong>Phishing Resistant</strong>: Passkeys are bound to the website's origin, preventing phishing attacks.</li>
+                    <li><strong>No Shared Secrets</strong>: The private key never leaves your device.</li>
+                    <li><strong>No Password Database</strong>: Servers only store public keys, which can't be used to authenticate.</li>
+                    <li><strong>Biometric Protection</strong>: Keys can be protected by your device's biometrics (fingerprint, face).</li>
+                </ul>
+            </div>
         </div>
     </div>
 
