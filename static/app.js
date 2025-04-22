@@ -22,11 +22,44 @@ document.addEventListener('DOMContentLoaded', function() {
         encrypted: false
     };
 
-    // Add event listeners
-    if (addSecretBtn) addSecretBtn.addEventListener('click', addSecret);
-    if (getPrfBtn) getPrfBtn.addEventListener('click', getPrf);
-    if (encryptBtn) encryptBtn.addEventListener('click', encryptSecret);
-    if (decryptBtn) decryptBtn.addEventListener('click', decryptSecret);
+    // Add event listeners with debugging
+    console.log('Setting up event listeners...');
+    console.log('addSecretBtn:', addSecretBtn);
+    console.log('getPrfBtn:', getPrfBtn);
+    console.log('encryptBtn:', encryptBtn);
+    console.log('decryptBtn:', decryptBtn);
+
+    if (addSecretBtn) {
+        console.log('Adding click listener to addSecretBtn');
+        addSecretBtn.addEventListener('click', function() {
+            console.log('addSecretBtn clicked');
+            addSecret();
+        });
+    }
+
+    if (getPrfBtn) {
+        console.log('Adding click listener to getPrfBtn');
+        getPrfBtn.addEventListener('click', function() {
+            console.log('getPrfBtn clicked');
+            getPrf();
+        });
+    }
+
+    if (encryptBtn) {
+        console.log('Adding click listener to encryptBtn');
+        encryptBtn.addEventListener('click', function() {
+            console.log('encryptBtn clicked');
+            encryptSecret();
+        });
+    }
+
+    if (decryptBtn) {
+        console.log('Adding click listener to decryptBtn');
+        decryptBtn.addEventListener('click', function() {
+            console.log('decryptBtn clicked');
+            decryptSecret();
+        });
+    }
 
     // Helper functions for conversion and logging
     window.b64uToBuf = str => {
@@ -67,6 +100,22 @@ document.addEventListener('DOMContentLoaded', function() {
     WebAssembly.instantiateStreaming(fetch('main.wasm'), go.importObject).then((result) => {
         go.run(result.instance);
         log('WebAssembly initialized successfully');
+
+        // Test WebAssembly functions
+        try {
+            log('Testing WebAssembly functions...');
+            const testBytes = goWasm.generateRandomBytes(16);
+            log('Generated random bytes:', testBytes);
+            log('WebAssembly functions are working correctly');
+
+            // Enable buttons for testing
+            document.getElementById('encryptBtn').disabled = false;
+            document.getElementById('decryptBtn').disabled = false;
+            log('Enabled encrypt and decrypt buttons for testing');
+        } catch (err) {
+            log('Error testing WebAssembly functions:', err.message);
+            console.error('WebAssembly test error:', err);
+        }
     }).catch(err => {
         log('Failed to initialize WebAssembly:', err);
         console.error('WebAssembly initialization error:', err);
@@ -89,6 +138,15 @@ async function addSecret() {
         // Generate random secret (32 bytes) using WebAssembly
         const secret = goWasm.generateRandomBytes(32);
         log('Generated secret:', secret);
+
+        // Ensure all values are standard base64 (not base64url)
+        const standardSecretID = secretID.replace(/-/g, '+').replace(/_/g, '/');
+        const standardSalt = salt.replace(/-/g, '+').replace(/_/g, '/');
+        const standardSecret = secret.replace(/-/g, '+').replace(/_/g, '/');
+
+        log('Standard base64 secretID:', standardSecretID);
+        log('Standard base64 salt:', standardSalt);
+        log('Standard base64 secret:', standardSecret);
 
         // Store the data locally
         window.currentData = {
@@ -219,6 +277,8 @@ async function getPrf() {
 
 // Encrypt secret
 async function encryptSecret() {
+    console.log('encryptSecret function called');
+    log('encryptSecret function called');
     try {
         if (!window.currentData || !window.currentData.key) {
             log('No key available. Please get PRF output first.');
@@ -229,11 +289,52 @@ async function encryptSecret() {
 
         // Step 1: Encrypt the secret using AES-256-GCM
         log('Step 1: Encrypting the secret using AES-256-GCM...');
-        const encryptionResult = goWasm.encryptSecret(window.currentData.key, window.currentData.secret);
-        log('Encryption result:');
-        log('- Ciphertext (base64):', encryptionResult.ciphertext);
-        log('- Nonce (base64):', encryptionResult.nonce);
-        log('- AAD (base64):', encryptionResult.aad);
+        log('Key:', window.currentData.key);
+        log('Secret:', window.currentData.secret);
+
+        try {
+            // Convert secret to standard base64 (not base64url)
+            // First, convert base64url to standard base64 by replacing - with + and _ with /
+            const secretBase64 = window.currentData.secret.replace(/-/g, '+').replace(/_/g, '/');
+            // Add padding if needed
+            const paddedSecretBase64 = secretBase64.padEnd(Math.ceil(secretBase64.length / 4) * 4, '=');
+
+            log('Secret (standard base64):', paddedSecretBase64);
+
+            // Call the WebAssembly function
+            const encryptionResult = goWasm.encryptSecret(window.currentData.key, paddedSecretBase64);
+            console.log('Raw encryption result:', encryptionResult);
+
+            // Check if the result is valid
+            if (!encryptionResult || typeof encryptionResult !== 'object') {
+                throw new Error('Invalid encryption result: ' + JSON.stringify(encryptionResult));
+            }
+
+            // Access properties safely
+            const ciphertext = encryptionResult.ciphertext || '';
+            const nonce = encryptionResult.nonce || '';
+            const aad = encryptionResult.aad || '';
+
+            if (!ciphertext || !nonce || !aad) {
+                throw new Error('Missing required encryption properties');
+            }
+
+            log('Encryption result:');
+            log('- Ciphertext (base64):', ciphertext);
+            log('- Nonce (base64):', nonce);
+            log('- AAD (base64):', aad);
+
+            // Store the encryption result for later use
+            window.currentData.encryptionResult = {
+                ciphertext: ciphertext,
+                nonce: nonce,
+                aad: aad
+            };
+        } catch (err) {
+            log('Error during encryption:', err.message);
+            console.error('Encryption error:', err);
+            throw err;
+        }
 
         // Step 2: Send encrypted data to server
         log('Step 2: Sending encrypted data to server...');
@@ -245,9 +346,9 @@ async function encryptSecret() {
             body: JSON.stringify({
                 secretID: window.currentData.secretID,
                 salt: window.currentData.salt,
-                ciphertext: encryptionResult.ciphertext,
-                nonce: encryptionResult.nonce,
-                aad: encryptionResult.aad
+                ciphertext: window.currentData.encryptionResult.ciphertext,
+                nonce: window.currentData.encryptionResult.nonce,
+                aad: window.currentData.encryptionResult.aad
             })
         });
 
@@ -278,6 +379,8 @@ async function encryptSecret() {
 
 // Decrypt secret
 async function decryptSecret() {
+    console.log('decryptSecret function called');
+    log('decryptSecret function called');
     try {
         if (!window.currentData || !window.currentData.key || !window.currentData.encrypted) {
             log('No encrypted data available. Please encrypt a secret first.');
@@ -314,11 +417,21 @@ async function decryptSecret() {
 
         // Step 2: Decrypt the secret
         log('Step 2: Decrypting the secret...');
+
+        // Make sure all values are properly padded standard base64
+        const paddedCiphertext = retrieveResult.ciphertext.padEnd(Math.ceil(retrieveResult.ciphertext.length / 4) * 4, '=');
+        const paddedNonce = retrieveResult.nonce.padEnd(Math.ceil(retrieveResult.nonce.length / 4) * 4, '=');
+        const paddedAAD = retrieveResult.aad.padEnd(Math.ceil(retrieveResult.aad.length / 4) * 4, '=');
+
+        log('Padded ciphertext:', paddedCiphertext);
+        log('Padded nonce:', paddedNonce);
+        log('Padded AAD:', paddedAAD);
+
         const decryptedSecret = goWasm.decryptSecret(
             window.currentData.key,
-            retrieveResult.ciphertext,
-            retrieveResult.nonce,
-            retrieveResult.aad
+            paddedCiphertext,
+            paddedNonce,
+            paddedAAD
         );
         log('Decryption result:');
         log('- Decrypted secret (base64):', decryptedSecret);
